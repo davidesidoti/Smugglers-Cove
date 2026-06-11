@@ -87,6 +87,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Heat|Inspection")
 	bool IsInspectionPending() const { return PendingInspection.bValid; }
 
+	/** True while the inspector is on site (warning elapsed, set piece running, not yet resolved). */
+	UFUNCTION(BlueprintPure, Category = "Heat|Inspection")
+	bool IsInspectionDue() const { return PendingInspection.bValid && PendingInspection.bDue; }
+
 	UFUNCTION(BlueprintPure, Category = "Heat|Inspection")
 	FPendingInspection GetPendingInspection() const { return PendingInspection; }
 

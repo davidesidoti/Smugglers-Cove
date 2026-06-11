@@ -175,8 +175,10 @@ void FHeatInspectionSpec::Define()
 			Heat->ForceScheduleInspection(Weaponry);
 			Heat->AdvanceTime(23.0f);
 			TestFalse("not due at 23h", Heat->GetPendingInspection().bDue);
+			TestFalse("IsInspectionDue false at 23h", Heat->IsInspectionDue());
 			Heat->AdvanceTime(1.0f);
 			TestTrue("due at 24h", Heat->GetPendingInspection().bDue);
+			TestTrue("IsInspectionDue true at 24h", Heat->IsInspectionDue());
 			TestEqual("due fired", Listener->DueCount, 1);
 			Heat->AdvanceTime(10.0f);
 			TestEqual("due fired only once", Listener->DueCount, 1);
