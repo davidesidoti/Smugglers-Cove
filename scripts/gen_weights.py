@@ -28,6 +28,29 @@ w_dirt = np.maximum(
     smoothstep(-4.0, -10.0, h) * 0.8,                      # deeper seabed
 )
 w_dirt = np.maximum(w_dirt, smoothstep(0.40, 0.65, slope) * 0.3)  # light scree on steeper slopes
+# --- dirt paths: village hub -> dock beach, village -> north meadow, village -> west hill saddle
+def seg_dist(px, py, ax, ay, bx, by):
+    abx, aby = bx - ax, by - ay
+    t = np.clip(((px - ax) * abx + (py - ay) * aby) / (abx ** 2 + aby ** 2), 0, 1)
+    return np.sqrt((px - (ax + t * abx)) ** 2 + (py - (ay + t * aby)) ** 2)
+
+cols, rows = np.meshgrid(np.arange(h.shape[1], dtype=np.float64),
+                         np.arange(h.shape[0], dtype=np.float64))
+# waypoints in image px (col, row); world = (idx-504)*100
+VIL = (514, 564)                     # village hub (1000, 6000)
+PATHS = [
+    [VIL, (565, 614)],               # village -> bay-head beach (dock site)
+    [VIL, (494, 474), (474, 384)],   # village -> north meadow
+    [VIL, (424, 544), (354, 504)],   # village -> west slope
+]
+d_path = np.full(h.shape, 1e9)
+for wp in PATHS:
+    for (ax, ay), (bx, by) in zip(wp[:-1], wp[1:]):
+        d_path = np.minimum(d_path, seg_dist(cols, rows, ax, ay, bx, by))
+path_mask = smoothstep(5.0, 2.5, d_path)            # ~5-7 m wide trails
+path_mask *= smoothstep(0.5, 2.5, h)                # only on dry land
+w_dirt = np.maximum(w_dirt, path_mask)
+
 w_wild = np.clip(1.0 - w_dirt - w_slope, 0.0, 1.0)
 
 total = w_wild + w_dirt + w_slope
