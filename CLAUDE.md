@@ -81,6 +81,13 @@ system surfaced through a Blueprint HUD), run the C++ loop first, restart the ed
    tests; if a system being changed has none, write them. Do not report done on an unverified build.
 4. Restart the editor to load the rebuilt module (§1.7) before exercising it from Blueprint/PIE.
 
+**C++ build & test commands (UE 5.7 at `C:\Program Files\Epic Games\UE_5.7\`):**
+- Build (incremental, ~20s): `Engine\Build\BatchFiles\Build.bat SmugglersCoveEditor Win64 Development -project="<abs>\SmugglersCove.uproject" -WaitMutex`. **Quit the editor first** (it locks the module); `-WaitMutex` just waits on the build lock, not the editor.
+- Headless tests: `Engine\Binaries\Win64\UnrealEditor-Cmd.exe "<uproject>" -ExecCmds="Automation RunTests <Filter>; Quit" -unattended -nopause -nosplash -nullrhi -NoSound -ReportExportPath="<abs>\Saved\AutomationReport"` (our Heat filter = `SmugglersCove.Heat`).
+- ⚠️ `UnrealEditor-Cmd` writes **nothing useful to stdout** and returns exit **255/-1 on ANY test failure** — do NOT judge by exit code/stdout. Parse `Saved\AutomationReport\index.json` (`succeeded`/`succeededWithWarnings`/`failed`/`notRun`; per-test `state`/`entries`). Worker logs go to `SmugglersCove\Saved\Logs\SmugglersCove.log` (`LogAutomationController`).
+- ⚠️ **In a spec, `NewObject<UMyGameInstanceSubsystem>()` with no outer trips an engine ensure** (subsystems have `ClassWithin = UGameInstance`) → fails the test. Create a `UGameInstance` outer first: `NewObject<U…Subsystem>(GameInstance)`. Root test UObjects with `AddToRoot()`, free with `RemoveFromRoot()` in `AfterEach`.
+- Heat core is **presentation-free & world-free by design**: spec instantiates the subsystem directly, injects `UHeatConfig` via `SetConfig` and Navy rep via `IHeatNavyReputationProvider` (or `SetFallbackNavyReputation`), and drives time with explicit `AdvanceTime(GameHours)` — no PIE, no Tick. Keep new core systems testable the same way.
+
 **Blueprint/asset loop:** use the full verification loop in §3 below (load the matching VibeUE skill →
 compile BP → re-read nodes/connections → PIE with external waits → read live state → screenshot →
 read logs → end PIE). It is correct as written; the only addition for this project is that the C++
@@ -450,6 +457,84 @@ then `compile_material` + `save_asset`. Remove a stray output wire with
 - Swapping a `StaticMesh`'s slot material: `static_materials[i].set_editor_property("material_interface", …)`
   does **NOT persist** (structs returned by copy; `imported_material_slot_name` is read-only so you can't
   rebuild the array either). Use `sm.set_material(index, mat)` + `save_asset` instead.
+
+### 1.17 ⭐ Wiring a C++ `UGameInstanceSubsystem` into a Blueprint via tooling (the C++↔BP seam)
+This is the project's recurring pattern (every C++ core system is surfaced to BP this way), with 4 traps:
+- **`K2Node_GetSubsystem` (the native "Get …Subsystem" node) can't be pointed at a game subsystem via
+  tooling** — setting its `Class` pin to `/Script/<Module>.<Sub>` makes the title read **"Invalid Subsystem
+  Type"** (pin is named `Class`, not `CustomClass`). Use `add_function_call_node(bp, g,
+  "SubsystemBlueprintLibrary", "GetGameInstanceSubsystem", …)`, set its `Class` pin to
+  `/Script/<Module>.<Sub>`, wire `ContextObject` from a `NODE K2Node_Self`, then **Cast** the
+  `ReturnValue` to the subsystem class. (A human in-editor can just use the native node; tooling can't.)
+- **Calling a C++ subsystem `UFUNCTION` is a plain `function_call`** with `class` = the bare class name
+  **without prefix** (`"HeatSubsystem"`, not `"UHeatSubsystem"` / `"/Script/…"`): `add_function_call_node(bp,
+  g, "HeatSubsystem", "RegisterActivity", …)` works and exposes `self`/params directly.
+- **`make_struct` for a C++ `USTRUCT` needs the FULLY-QUALIFIED path** — `"HeatActionContext"` and
+  `"FHeatActionContext"` both make `build_graph` **return `None`** (the §1.10 None-on-bad-spec trap); only
+  `"/Script/<Module>.<StructName>"` (no `F`) works. Its output pin is the struct name verbatim
+  (`HeatActionContext`).
+- **Cast-node output pins are display-spaced:** casting to `HeatSubsystem` yields an output pin literally
+  named **`AsHeat Subsystem`** (space inserted before each CamelCase hump) — read pins with
+  `get_node_pins()`, don't guess.
+- ⚠️ **MCP may NOT auto-reconnect after a mid-session editor restart** (contra §1.7's "auto-reconnects"):
+  the Claude-side MCP client stays disconnected, but the in-editor server on `:8088` is still live — drive it
+  via raw MCP JSON-RPC over HTTP (initialize → grab `Mcp-Session-Id` → `tools/call`, responses are SSE
+  `data:` lines). No Claude restart needed.
+
+### 1.18 ⭐ More graph-tooling traps (delegate binds, FMod, math nodes)
+- **A `Bind Event to <Delegate>` node REFUSES a direct `CustomEvent.OutputDelegate → Delegate` wire**
+  (both directions return False; compile error "Event Dispatcher pin is not connected") even when the
+  custom event's signature matches. Insert a **Create Event** node:
+  `add_create_delegate_node(bp, g, "<HandlerCustomEventName>", x, y)` → wire its `OutputDelegate` →
+  bind's `Delegate`. The custom event itself (with `add_custom_event_input(bp, g, node_id, "Param",
+  "FMyStruct")` for struct params) stays as the visible handler.
+- **`KismetMathLibrary::FMod` ("Division (Whole and Remainder)") is a TRAP via tooling:** its result is
+  the **`Remainder` out-pin** (ReturnValue is a bool-ish quotient thing), and setting `Divisor` via pin
+  default **claims success but leaves it 0** → `Remainder == Dividend` and your math is silently ×N wrong
+  (our UDS clock advanced 24 game-hours per TICK). For periodic-wrap deltas prefer **`Max(delta, 0)`**
+  (loses only the single wrap frame) over fmod. Verify rate-style graphs with a temporary per-tick
+  PrintString of the computed value — connection lists LOOK right while the value is garbage.
+- **`build_graph` `"math"` specs can return None** (whole batch invalid, §1.10) where standalone
+  `add_math_node(bp, g, "Max", "Float", x, y)` succeeds — when a batch dies on a math node, recover with
+  the standalone API + `connect_nodes`, don't retry the batch.
+- **Verification of time/rate logic needs live measurement, not just graph reading:** read live PIE state
+  twice N seconds apart (`get_editor_property` on instances + subsystem getters are callable from Python)
+  and check the delta against the expected rate exactly — that's what caught the FMod bug.
+
+### 1.19 ⭐ Landscape + Water (terrain/ocean) tooling gotchas
+- **The environment is a reproducible numpy→PNG→VibeUE pipeline in `scripts/`** (gen_* build the
+  heightmap/weightmaps/placements with seeded numpy; build_0*.py drive `unreal.*` via the raw-HTTP
+  client). Iterate the island by regenerating from code, not hand-editing in-editor.
+- **Heightmap↔world axis mapping** (verify by line trace, don't assume): world X = image **column**,
+  world Y = image **row**, `world = (idx − halfRes) * scale`. 16-bit value 32768 = Z 0; `128/scaleZ`
+  value-units per metre. `LandscapeService.import_heightmap` needs the PNG resolution to match EXACTLY.
+- ⭐ **`WaterBodyOcean` SCULPTS the landscape on spawn** (Landmass brush + a `*_WaterBrushManager`
+  actor): it carved our island ~40% smaller with a moat. Fix: `water_body_component.set_editor_property(
+  "affects_landscape", False)`, **delete the WaterBrushManager actor**, then re-`import_heightmap`.
+- ⭐ **The ocean spline marks where water is NOT** — the mesh renders only OUTSIDE the spline polygon.
+  The default 20 km square cuts through bays → an "invisible wall" of missing water at the shoreline.
+  Feed it the coastline contour instead (skimage `find_contours` at ~+1.5 m + RDP simplify →
+  `spline.set_spline_points(WORLD, closed)`). Set `water_body_component.shape_dilation = 0` to kill
+  vertical skirt shards at the mesh boundary.
+- ⭐ **Recompiling the landscape material DEREGISTERS every paint layer** — `LandscapeService.list_layers`
+  returns empty and `set_weights_in_region` returns **False silently**. Re-run `add_layer(landscape,
+  layer_info_path)` for each layer first, then weights write again.
+- **Landscape grass = a `LandscapeGrassOutput` node in the material** (sampling a layer via
+  `MaterialExpressionLandscapeLayerSample`) + a `LandscapeGrassType` asset; grass auto-clears wherever a
+  different layer (e.g. Dirt paths) is painted. `grass.FlushCache` after edits. ⚠️ `MaterialEditingLibrary`
+  has **no `get_material_expressions`** (can't check idempotently — run grass-wiring scripts once).
+- **FoliagePack color trap:** `MI_Grass_Fo_01a` renders PINK heather; the green grass MI is
+  `MI_GreenGrass_Fo_01a`. Duplicate the mesh and `set_material(0, green_mi)` for a green meadow.
+- **Place ground props by line trace, not heightmap Z:** ignore Water* actors in the trace, take the
+  first `unreal.Vector` in `hit.to_tuple()` as ground Z (`break_hit_result` is NOT bound on SystemLibrary).
+
+### 1.20 ⭐ Editor screenshots: stale frames & which call actually works
+- **The editor viewport does NOT redraw on asset/scene changes when realtime is off** — consecutive
+  captures return byte-identical STALE frames, even after `editor_invalidate_viewports`. Force a fresh
+  frame by **moving the camera** (`UnrealEditorSubsystem.set_level_viewport_camera_info`) before capturing.
+- **`AutomationLibrary.take_high_res_screenshot` is latent/unreliable via MCP** (30 s timeout, file lands
+  seconds later or not at all). Prefer `ScreenshotService.capture_editor_window(png)` (synchronous, returns
+  `success/width/height`), then **un-swap R/B** (red↔blue, §1.3) and crop the viewport region for review.
 
 ---
 
