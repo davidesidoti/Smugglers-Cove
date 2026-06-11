@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "unrealclaude": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "D:/Github/Smugglers-Cove/SmugglersCove/Plugins/UnrealClaude/UnrealClaude/Resources/mcp-bridge/index.js"
+      ],
+      "env": {
+        "UNREAL_MCP_URL": "http://localhost:3000"
+      }
+    },
+    "VibeUE": {
+      "type": "http",
+      "url": "http://127.0.0.1:8089/mcp"
+    }
+  }
+}
