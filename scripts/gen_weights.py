@@ -51,6 +51,10 @@ path_mask = smoothstep(5.0, 2.5, d_path)            # ~5-7 m wide trails
 path_mask *= smoothstep(0.5, 2.5, h)                # only on dry land
 w_dirt = np.maximum(w_dirt, path_mask)
 
+# market plaza: packed-dirt circle at the village hub
+d_plaza = np.sqrt((cols - VIL[0]) ** 2 + (rows - VIL[1]) ** 2)
+w_dirt = np.maximum(w_dirt, smoothstep(16.0, 11.0, d_plaza))
+
 w_wild = np.clip(1.0 - w_dirt - w_slope, 0.0, 1.0)
 
 total = w_wild + w_dirt + w_slope
