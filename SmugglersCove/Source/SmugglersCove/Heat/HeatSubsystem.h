@@ -3,8 +3,10 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Math/RandomStream.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "HeatTypes.h"
+#include "HeatInspectionTypes.h"
 #include "HeatNavyReputationProvider.h"
 #include "HeatSubsystem.generated.h"
 
@@ -64,9 +66,33 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Heat")
 	void ApplyLegalAction(FName Activity, float CleaningPower);
 
-	/** Advances time by GameHours, applying passive decay modulated by Navy reputation. */
+	/** Advances time by GameHours: passive decay, inspection-pressure accrual and warning countdown. */
 	UFUNCTION(BlueprintCallable, Category = "Heat")
 	void AdvanceTime(float GameHours);
+
+	// --- Inspections ---
+
+	/** Seeds the jitter stream so the exact inspection timing is reproducible (tests, replays). */
+	UFUNCTION(BlueprintCallable, Category = "Heat|Inspection")
+	void SetInspectionSeed(int32 Seed);
+
+	/** Clears the pending inspection after the set piece has played out; pressure accrual resumes. */
+	UFUNCTION(BlueprintCallable, Category = "Heat|Inspection")
+	void ResolvePendingInspection();
+
+	/** Debug/valve hook: schedules an inspection now, bypassing pressure. None = auto-pick target. */
+	UFUNCTION(BlueprintCallable, Category = "Heat|Inspection")
+	void ForceScheduleInspection(FName TargetActivity);
+
+	UFUNCTION(BlueprintPure, Category = "Heat|Inspection")
+	bool IsInspectionPending() const { return PendingInspection.bValid; }
+
+	UFUNCTION(BlueprintPure, Category = "Heat|Inspection")
+	FPendingInspection GetPendingInspection() const { return PendingInspection; }
+
+	/** Accrued pressure as [0, 1] of the threshold — drives a "how close is the next inspection" meter. */
+	UFUNCTION(BlueprintPure, Category = "Heat|Inspection")
+	float GetInspectionPressureNormalized() const;
 
 	// --- Queries ---
 
@@ -95,12 +121,25 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Heat")
 	FOnActivityHeatChanged OnActivityHeatChanged;
 
+	UPROPERTY(BlueprintAssignable, Category = "Heat|Inspection")
+	FOnInspectionScheduled OnInspectionScheduled;
+
+	UPROPERTY(BlueprintAssignable, Category = "Heat|Inspection")
+	FOnInspectionDue OnInspectionDue;
+
 private:
 	const UHeatConfig* GetConfigOrDefault() const;
 	void SetGlobalHeatInternal(float NewValue);
 	void SetActivityHeatInternal(FName Activity, float NewValue);
 	/** Returns the map entry for Activity, registering it (with a log) if gameplay never did. */
 	float& FindOrRegisterActivity(FName Activity);
+
+	/** Pressure accrual / warning countdown, driven from AdvanceTime. */
+	void TickInspection(float GameHours);
+	void ScheduleInspectionInternal(FName TargetActivity);
+	void MarkInspectionDue();
+	/** Deterministic target choice: highest localized Heat, ties broken by name. */
+	FName PickInspectionTarget() const;
 
 	UPROPERTY()
 	TObjectPtr<UHeatConfig> Config;
@@ -113,4 +152,11 @@ private:
 	float GlobalHeat = 0.0f;
 
 	TMap<FName, float> ActivityHeat;
+
+	float InspectionPressure = 0.0f;
+
+	FPendingInspection PendingInspection;
+
+	/** Only source of randomness in the system: the +/- jitter on the warning. Default seed 0. */
+	FRandomStream InspectionRandom;
 };

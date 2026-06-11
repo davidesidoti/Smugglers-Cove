@@ -65,6 +65,36 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Heat|Navy Reputation", meta = (ClampMin = "0.0"))
 	float DecayMultiplierAtMaxNavyRep = 1.5f;
 
+	// --- Inspection scheduling ---
+
+	/** Pressure gained per game hour at full global Heat and neutral Navy reputation. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inspection|Pressure", meta = (ClampMin = "0.0"))
+	float InspectionPressurePerHour = 10.0f;
+
+	/** When accrued pressure crosses this, an inspection is scheduled and pressure resets. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inspection|Pressure", meta = (ClampMin = "1.0"))
+	float InspectionPressureThreshold = 100.0f;
+
+	/** Pressure-rate multiplier at Navy reputation -1 (hostile): inspections come often. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inspection|Pressure", meta = (ClampMin = "0.0"))
+	float NavyPressureMultiplierAtMinNavyRep = 1.5f;
+
+	/** Pressure-rate multiplier at Navy reputation +1 (trusted): inspections are rare. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inspection|Pressure", meta = (ClampMin = "0.0"))
+	float NavyPressureMultiplierAtMaxNavyRep = 0.5f;
+
+	/** Advance warning (game hours) at Navy reputation -1: 0 = surprise inspection. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inspection|Warning", meta = (ClampMin = "0.0"))
+	float WarningHoursAtMinNavyRep = 0.0f;
+
+	/** Advance warning (game hours) at Navy reputation +1: announced well ahead. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inspection|Warning", meta = (ClampMin = "0.0"))
+	float WarningHoursAtMaxNavyRep = 24.0f;
+
+	/** Random +/- window applied to the warning so the exact arrival can't be fully predicted. 0 disables jitter. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Inspection|Warning", meta = (ClampMin = "0.0"))
+	float WarningJitterHours = 2.0f;
+
 	/** Heat-gain multiplier for a given Navy reputation in [-1, +1]. */
 	UFUNCTION(BlueprintPure, Category = "Heat")
 	float GetNavyGainMultiplier(float NavyReputation) const;
@@ -72,4 +102,12 @@ public:
 	/** Heat-decay multiplier for a given Navy reputation in [-1, +1]. */
 	UFUNCTION(BlueprintPure, Category = "Heat")
 	float GetNavyDecayMultiplier(float NavyReputation) const;
+
+	/** Inspection-pressure-rate multiplier for a given Navy reputation in [-1, +1]. */
+	UFUNCTION(BlueprintPure, Category = "Heat")
+	float GetNavyPressureMultiplier(float NavyReputation) const;
+
+	/** Advance-warning hours for a given Navy reputation in [-1, +1], before jitter. */
+	UFUNCTION(BlueprintPure, Category = "Heat")
+	float GetWarningHours(float NavyReputation) const;
 };

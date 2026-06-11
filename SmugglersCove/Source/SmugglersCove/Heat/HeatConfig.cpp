@@ -20,3 +20,13 @@ float UHeatConfig::GetNavyDecayMultiplier(float NavyReputation) const
 {
 	return FMath::Lerp(DecayMultiplierAtMinNavyRep, DecayMultiplierAtMaxNavyRep, NavyRepAlpha(NavyReputation));
 }
+
+float UHeatConfig::GetNavyPressureMultiplier(float NavyReputation) const
+{
+	return FMath::Lerp(NavyPressureMultiplierAtMinNavyRep, NavyPressureMultiplierAtMaxNavyRep, NavyRepAlpha(NavyReputation));
+}
+
+float UHeatConfig::GetWarningHours(float NavyReputation) const
+{
+	return FMath::Lerp(WarningHoursAtMinNavyRep, WarningHoursAtMaxNavyRep, NavyRepAlpha(NavyReputation));
+}

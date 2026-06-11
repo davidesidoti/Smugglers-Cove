@@ -101,6 +101,122 @@ void UHeatSubsystem::AdvanceTime(float GameHours)
 	{
 		SetActivityHeatInternal(Activity, ActivityHeat.FindChecked(Activity) - ActivityDecay);
 	}
+
+	// Decay first, then pressure: the hour you just lived counts at its end-of-hour heat.
+	TickInspection(GameHours);
+}
+
+void UHeatSubsystem::SetInspectionSeed(int32 Seed)
+{
+	InspectionRandom.Initialize(Seed);
+}
+
+void UHeatSubsystem::ResolvePendingInspection()
+{
+	PendingInspection = FPendingInspection();
+}
+
+void UHeatSubsystem::ForceScheduleInspection(FName TargetActivity)
+{
+	if (PendingInspection.bValid)
+	{
+		UE_LOG(LogSmugglersCove, Warning, TEXT("HeatSubsystem: an inspection is already pending — resolve it before forcing another"));
+		return;
+	}
+	ScheduleInspectionInternal(TargetActivity.IsNone() ? PickInspectionTarget() : TargetActivity);
+}
+
+float UHeatSubsystem::GetInspectionPressureNormalized() const
+{
+	const UHeatConfig* Cfg = GetConfigOrDefault();
+	return Cfg->InspectionPressureThreshold > 0.0f
+		? FMath::Clamp(InspectionPressure / Cfg->InspectionPressureThreshold, 0.0f, 1.0f)
+		: 0.0f;
+}
+
+void UHeatSubsystem::TickInspection(float GameHours)
+{
+	const UHeatConfig* Cfg = GetConfigOrDefault();
+
+	if (PendingInspection.bValid)
+	{
+		// Pressure is paused while an inspection is pending; only the warning counts down.
+		if (!PendingInspection.bDue)
+		{
+			PendingInspection.HoursUntilDue = FMath::Max(PendingInspection.HoursUntilDue - GameHours, 0.0f);
+			if (PendingInspection.HoursUntilDue <= 0.0f)
+			{
+				MarkInspectionDue();
+			}
+		}
+		return;
+	}
+
+	const float Rate = Cfg->InspectionPressurePerHour
+		* GetGlobalHeatNormalized()
+		* Cfg->GetNavyPressureMultiplier(GetNavyReputation());
+	if (Rate <= 0.0f)
+	{
+		return;
+	}
+
+	InspectionPressure += Rate * GameHours;
+	if (InspectionPressure >= Cfg->InspectionPressureThreshold)
+	{
+		ScheduleInspectionInternal(PickInspectionTarget());
+	}
+}
+
+void UHeatSubsystem::ScheduleInspectionInternal(FName TargetActivity)
+{
+	const UHeatConfig* Cfg = GetConfigOrDefault();
+
+	InspectionPressure = 0.0f;
+
+	FPendingInspection Inspection;
+	Inspection.bValid = true;
+	Inspection.TargetActivity = TargetActivity;
+	Inspection.TargetActivityHeat = GetActivityHeat(TargetActivity);
+
+	float Warning = Cfg->GetWarningHours(GetNavyReputation());
+	if (Cfg->WarningJitterHours > 0.0f)
+	{
+		Warning += InspectionRandom.FRandRange(-Cfg->WarningJitterHours, Cfg->WarningJitterHours);
+	}
+	Inspection.WarningHours = FMath::Max(Warning, 0.0f);
+	Inspection.HoursUntilDue = Inspection.WarningHours;
+
+	PendingInspection = Inspection;
+	OnInspectionScheduled.Broadcast(PendingInspection);
+
+	// No warning at all = a surprise inspection: the inspector is already at the door.
+	if (PendingInspection.HoursUntilDue <= 0.0f)
+	{
+		MarkInspectionDue();
+	}
+}
+
+void UHeatSubsystem::MarkInspectionDue()
+{
+	PendingInspection.bDue = true;
+	OnInspectionDue.Broadcast(PendingInspection);
+}
+
+FName UHeatSubsystem::PickInspectionTarget() const
+{
+	FName Best;
+	float BestHeat = -1.0f;
+	for (const TPair<FName, float>& Pair : ActivityHeat)
+	{
+		const bool bHotter = Pair.Value > BestHeat;
+		const bool bTieBrokenByName = Pair.Value == BestHeat && Pair.Key.LexicalLess(Best);
+		if (bHotter || bTieBrokenByName)
+		{
+			Best = Pair.Key;
+			BestHeat = Pair.Value;
+		}
+	}
+	return Best;
 }
 
 float UHeatSubsystem::GetGlobalHeatNormalized() const
