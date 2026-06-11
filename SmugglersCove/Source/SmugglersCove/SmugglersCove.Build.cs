@@ -25,6 +25,7 @@ public class SmugglersCove : ModuleRules
 
 		PublicIncludePaths.AddRange(new string[] {
 			"SmugglersCove",
+			"SmugglersCove/Heat",
 			"SmugglersCove/Variant_Horror",
 			"SmugglersCove/Variant_Horror/UI",
 			"SmugglersCove/Variant_Shooter",
