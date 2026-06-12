@@ -66,18 +66,20 @@ land_h = lowland + hills * smoothstep(0.55, 0.15, R + 0.1 * coast_noise)
 h = seafloor * (1 - island) + land_h * island
 
 # --- the cove: a sheltered bay bitten out of the SE coast ---
-# rotated ellipse straddling the coastline so its mouth opens to the sea
-bx, by = 0.28, 0.30                                  # basin center, inside the coast
+# rotated ellipse straddling the coastline so its mouth opens to the sea.
+# Sized for tall ships: ~425x240 m basin, -7.5 m floor (galleon draft ~2.5 m),
+# grown SEAWARD along the major axis so the inland head (village shore) stays put.
 ANG_BAY = np.radians(-38)
 ca, sa = np.cos(ANG_BAY), np.sin(ANG_BAY)
+SEMI_MAJ, SEMI_MIN = 0.42, 0.22
+bx, by = 0.28 + ca * 0.08, 0.30 + (-sa) * 0.08       # center shifted toward the mouth
 XB = (X - bx) * ca - (Y - by) * sa
 YB = (X - bx) * sa + (Y - by) * ca
-SEMI_MAJ, SEMI_MIN = 0.34, 0.16
-bay_noise = fractal_noise(RES, octaves=4, base=5) * 0.15
+bay_noise = fractal_noise(RES, octaves=4, base=5) * 0.13
 d_bay = np.sqrt((XB / SEMI_MAJ) ** 2 + (YB / SEMI_MIN) ** 2) + bay_noise
 bay = smoothstep(1.0, 0.55, d_bay)                  # 1 inside the bay
-# carve only: lower terrain toward -5.5 m, never raise the ocean floor
-bay_floor = np.minimum(h, h * (1 - bay) + (-5.5) * bay)
+# carve only: lower terrain toward -7.5 m, never raise the ocean floor
+bay_floor = np.minimum(h, h * (1 - bay) + (-7.5) * bay)
 h = np.where(bay > 0.01, bay_floor, h)
 
 # headlands: two rocky arms at the sides of the bay mouth
@@ -93,6 +95,12 @@ for s, amp in ((1, 16.0), (-1, 13.0)):
 # sand beach where the bay shore meets pre-existing land only
 beach_band = smoothstep(1.30, 1.0, d_bay) * (1 - bay) * island
 h = h * (1 - beach_band * 0.75) + 2.2 * (beach_band * 0.75)
+
+# --- dock apron: flat sand terrace at the bay's NW shore (pier root) ---
+# room for the disembark crowd that scales with ship size (galleon: 20-25 people)
+d_apron = np.sqrt((X - 0.0873) ** 2 + (Y - 0.1815) ** 2)
+apron = smoothstep(0.07, 0.028, d_apron) * (1 - bay)
+h = h * (1 - apron) + 1.6 * apron
 
 # --- village plateau at the cove's inland head, overlooking the water ---
 d_village = np.sqrt((X - 0.02) ** 2 + (Y - 0.12) ** 2)

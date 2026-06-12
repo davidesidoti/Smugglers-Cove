@@ -49,7 +49,7 @@ def fire(x, y, z, ns, light_intensity, radius, folder="Env/Fires"):
     lc = la.get_components_by_class(unreal.PointLightComponent)[0]
     lc.set_editor_property("mobility", unreal.ComponentMobility.MOVABLE)
     lc.set_editor_property("intensity", light_intensity)
-    lc.set_editor_property("light_color", unreal.Color(255, 147, 65, 255))
+    lc.set_editor_property("light_color", unreal.Color(r=255, g=147, b=65, a=255))  # BGRA positional trap!
     lc.set_editor_property("attenuation_radius", radius)
     lc.set_editor_property("source_radius", 12.0)
     lc.set_editor_property("cast_shadows", False)
@@ -65,19 +65,10 @@ for ang in (38, 128, 218, 308):
     y = CY + math.sin(rad) * 1250
     g = gz(x, y)
     sm_spawn("PillarLog1", x, y, g - 15, ang, (0.55, 0.55, 0.85))
-    fire(x, y, g + 268, NS_SMALL, 2500.0, 1400.0)
+    fire(x, y, g + 268, NS_SMALL, 250.0, 1100.0)
 
-# 2. two braziers on the dock deck (right side, clear of the rope rail)
-ux, uy = 0.822, 0.569
-DECK = 45.0
-for d in (4480, 5720):
-    x = 1008 + ux * d - uy * 130
-    y = 6048 + uy * d + ux * 130
-    sm_spawn("Bucket", x, y, DECK + 16, 0, (1.6, 1.6, 1.2))
-    fire(x, y, DECK + 16 + 75, NS_SMALL, 2500.0, 1400.0)
-
-# 3. fire pit on the beach by the dock root
-fx, fy = 3650, 8350
+# 2. fire pit on the apron beach by the pier root
+fx, fy = 3900, 8500
 g = gz(fx, fy)
 import random
 rnd = random.Random(5)
@@ -85,7 +76,7 @@ for i in range(7):
     a = math.radians(i * 51.4)
     sm_spawn(ROCK, fx + math.cos(a) * 95, fy + math.sin(a) * 95, g - 18,
              rnd.uniform(0, 360), (0.22, 0.22, 0.18))
-fire(fx, fy, g + 6, NS_MED, 5000.0, 2200.0)
+fire(fx, fy, g + 6, NS_MED, 600.0, 1800.0)
 
 print("FIRE actors:", count)
 les = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
